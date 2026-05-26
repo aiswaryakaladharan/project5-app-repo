@@ -1,0 +1,22 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: 'project5-app'
+  acrName: 'project5acraiswarya.azurecr.io'
+  tag: '1'
+
+steps:
+
+- task: Docker@2
+  displayName: Build and Push Image
+  inputs:
+    containerRegistry: 'project5-acr-connection'
+    repository: 'project5-app'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+    tags: |
+      $(tag)
