@@ -8,38 +8,60 @@ variables:
   imageName: 'project5-app'
   acrLoginServer: 'project5acraiswarya.azurecr.io'
   imageTag: '$(Build.BuildId)'
+  fullImageName: 'project5acraiswarya.azurecr.io/project5-app:$(Build.BuildId)'
   manifestRepo: 'github.com/aiswaryakaladharan/project5-manifest-repo.git'
 
 steps:
+# Step 1: Node Build
+- script: |
+    npm install
+    npm run build
+  displayName: 'Step 1: Node Build'
 
+# Step 2: Docker Image Creation
+- script: |
+    docker buildx create --use
+    docker buildx build \
+      --platform linux/arm64 \
+      -t $(fullImageName) \
+      --load .
+  displayName: 'Step 2: Docker Image Creation'
+
+# Step 3: Trivy Vulnerability Scan on Docker Image
+- script: |
+    sudo apt-get update
+    sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+    wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+    echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+    sudo apt-get update
+    sudo apt-get install -y trivy
+
+    trivy image --exit-code 0 --severity HIGH,CRITICAL $(fullImageName)
+  displayName: 'Step 3: Trivy Scan Docker Image'
+
+# Step 4: Push Image to ACR
 - task: Docker@2
-  displayName: Login to ACR
+  displayName: 'Step 4: Login to ACR'
   inputs:
     command: login
     containerRegistry: 'project5-acr-connection'
 
 - script: |
-    docker buildx create --use
+    docker push $(fullImageName)
+  displayName: 'Step 4: Push Image to ACR'
 
-    docker buildx build \
-      --platform linux/arm64 \
-      -t $(acrLoginServer)/$(imageName):$(imageTag) \
-      --push .
-  displayName: Build and Push Image
-
+# Step 5 and 6: Update Manifest YAML using sed and Commit
 - script: |
     git config --global user.email "azuredevops@example.com"
-    git config --global user.name "Azure DevOps"
+    git config --global user.name "Azure DevOps Pipeline"
 
     git clone https://$(GITHUB_TOKEN)@$(manifestRepo) manifest-repo
 
     cd manifest-repo
 
-    sed -i "s|image: .*|image: $(acrLoginServer)/$(imageName):$(imageTag)|g" deployment.yaml
+    sed -i "s|image: .*|image: $(fullImageName)|g" deployment.yaml
 
     git add deployment.yaml
-
-    git commit -m "Updated image tag"
-
+    git commit -m "Update image tag to $(imageTag)"
     git push
-  displayName: Update deployment.yaml using sed
+  displayName: 'Step 5 & 6: Update Manifest using sed and Commit'
